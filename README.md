@@ -5,17 +5,25 @@
 
 1. Crear un virtualenv con el siguiente comando: 
 ```bash
-python -m venv ./venv
+$ python -m venv ./venv
 ```
 2. Activar el virtualenv.
 3. Instalar poetry dentro del venv con el siguiente comando: 
 ```bash
-pip install poetry
+$ pip install poetry
 ```
-4. Correr poetry install para instalar las dependencias requeridas.
+4. Instalar las dependencias requeridas con el siguiente comando:
+```bash
+$ poetry install
+
+# Y si no les reconoce el comando poetry pueden intentar con:
+$ python -m poetry install
+
+```
+
 5. Correr:
 ```bash
->>> python model.py --help
+$ python model.py --help
 
   -u, --umbral-escalado INTEGER   Espera en cola maximo para escalar.
                                   [default: 1]
