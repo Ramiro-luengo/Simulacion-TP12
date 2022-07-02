@@ -112,8 +112,8 @@ def run_model_from(
         if pec > pec1:
             pec1 = pec
 
-        if requiere_escalado(pec, umbral_escalado):
-            fpe = generar_demora()
+        if fpe < _time and requiere_escalado(pec, umbral_escalado):
+            fpe = _time + generar_demora()
 
         ct += (cant_serv * costo_por_min_serv * delta_t) + costo_inicio
 
