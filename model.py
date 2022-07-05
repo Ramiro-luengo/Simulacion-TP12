@@ -8,6 +8,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 
 import click
 
+HV = Decimal(9999999)
+
 
 def generar_tiempo_atencion() -> Decimal:
     # Uniforme entre 1 y 3 segundos.
@@ -24,12 +26,8 @@ def requiere_escalado(pec: Decimal, umbral_escalado: int) -> bool:
 
 
 def intervalo_entre_arribos() -> Decimal:
-    # Entre 10 y 20 segundos con el doble probabilidad que sea 20 que 10.
-    # r = random.random()
-    # func = math.sqrt(300*r + 10) / 60 # Divido por 60 para llevarlo a minutos.
-    # return Decimal(func)
-
-    return Decimal(0.01)
+    # Entre 0.5 y 1 segundo.
+    return Decimal(random.uniform(0.008, 0.016))
 
 
 def indice_de_menor(lista: List[int]) -> int:
@@ -38,17 +36,16 @@ def indice_de_menor(lista: List[int]) -> int:
     return lista.index(min_value)
 
 
-def hv_en_tps(hv: Decimal, tps: List[Decimal]) -> int:
-    return next(idx for idx, t_salida in enumerate(tps) if t_salida == hv)
+def hv_en_tps(tps: List[Decimal]) -> int:
+    return next(idx for idx, t_salida in enumerate(tps) if t_salida == HV)
 
 
 def atender_peticiones(cant_serv: int) -> Decimal:
-    hv = Decimal(9999999)
     ns = 0
     sta = 0
     cll = 0
     sps = 0
-    tps = [hv] * cant_serv
+    tps = [HV] * cant_serv
     tpll = 0
     _time = 0
 
@@ -65,7 +62,7 @@ def atender_peticiones(cant_serv: int) -> Decimal:
             ns += 1
             cll += 1
             if ns <= cant_serv:
-                idx_puesto_libre = hv_en_tps(hv, tps)
+                idx_puesto_libre = hv_en_tps(tps)
                 ta = generar_tiempo_atencion()
                 sta += ta
                 tps[idx_puesto_libre] = _time + ta
@@ -79,7 +76,7 @@ def atender_peticiones(cant_serv: int) -> Decimal:
                 sta += ta
                 tps[menor_idx] = _time + ta
             else:
-                tps[menor_idx] = deepcopy(hv)
+                tps[menor_idx] = deepcopy(HV)
 
     pec = (sps - sta) / cll
 
