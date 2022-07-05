@@ -9,13 +9,14 @@ from concurrent.futures import Future, ThreadPoolExecutor
 import click
 
 
-def generar_tiempo_atencion():
-    return Decimal(0.2)  # 30 segundos llevado a minutos.
+def generar_tiempo_atencion() -> Decimal:
+    # Uniforme entre 1 y 3 segundos.
+    return Decimal(random.uniform(0.016, 0.05))
 
 
 def generar_demora() -> int:
-    # Uniforme entre 20 y 50.
-    return int(random.uniform(20, 50))
+    # Uniforme entre 10 y 30 minutos.
+    return int(random.uniform(10, 30))
 
 
 def requiere_escalado(pec: Decimal, umbral_escalado: int) -> bool:
