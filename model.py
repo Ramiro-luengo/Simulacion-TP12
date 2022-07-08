@@ -1,5 +1,5 @@
-import math
 import random
+import simplejson as json
 from time import time
 from copy import deepcopy
 from decimal import Decimal
@@ -7,16 +7,21 @@ from typing import List, Optional, Tuple
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import click
-import logging
 
-log = logging.getLogger(__name__)
+from logging_config import get_logger
+
+log = get_logger(__name__)
 
 HV = Decimal(9999999)
 
 
-def intervalo_entre_arribos() -> Decimal:
-    # Entre 0.05 y 0.1 segundos.
-    return Decimal(random.uniform(0.0008, 0.0016))
+def intervalo_entre_arribos(real_time: int) -> Decimal:
+    if (real_time % 1440) < 360:
+        # 0hs y las 6hs: Entre 0.6 y 1.2 segundos.
+        return Decimal(random.uniform(0.01, 0.02))
+    else:
+        # Entre 0.05 y 0.1 segundos.
+        return Decimal(random.uniform(0.0008, 0.0016))
 
 
 def generar_tiempo_atencion() -> Decimal:
@@ -47,7 +52,7 @@ def hv_en_tps(tps: List[Decimal]) -> int:
     return next(idx for idx, t_salida in enumerate(tps) if t_salida == HV)
 
 
-def atender_peticiones(cant_serv: int) -> Decimal:
+def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
     ns = 0
     sta = 0
     cll = 0
@@ -57,16 +62,17 @@ def atender_peticiones(cant_serv: int) -> Decimal:
     sto = [0] * cant_serv
     tpll = 0
     _time = 0
+    tf = 1
 
     # Calcula la cantidad de peticiones que llegaron
-    # en los pasados 10 minutos con un EaE.
-    while _time < 10:
+    # en los pasados 1 minuto con un EaE.
+    while _time < tf:
         menor_idx = indice_de_menor(tps)
         if tpll < tps[menor_idx]:
             # Llegada
             sps += (tpll - _time) * ns
             _time = deepcopy(tpll)
-            ia = intervalo_entre_arribos()
+            ia = intervalo_entre_arribos(real_time)
             tpll = _time + ia
             ns += 1
             cll += 1
@@ -92,10 +98,16 @@ def atender_peticiones(cant_serv: int) -> Decimal:
                 ito[menor_idx] = deepcopy(_time)
 
     pec = (sps - sta) / cll
-    sto_min = min(sto)
-    pto_min = (sto_min * 100) / _time
 
-    return Decimal(pec), Decimal(pto_min)
+    # for idx in range(len(sto)):
+    #     # Si TPS == HV significa que nunca ejecuto nada.
+    #     if ito[idx] == 0 and tps[idx] == HV:
+    #         sto[idx] = tf
+
+    sto_max = max(sto)
+    pto_max = (sto_max * 100) / tf
+
+    return Decimal(pec), Decimal(pto_max)
 
 
 def run_model_from(
@@ -124,7 +136,7 @@ def run_model_from(
         else:
             costo_inicio = 0
 
-        pec, pto = atender_peticiones(cant_serv)
+        pec, pto = atender_peticiones(_time, cant_serv)
         if pec > pec1:
             pec1 = pec
 
@@ -133,7 +145,7 @@ def run_model_from(
 
         if fpe < _time and requiere_escalado(pec, umbral_escalado):
             fpe = _time + generar_demora()
-        elif requiere_descalado(pto, umbral_descalado):
+        elif requiere_descalado(pto, umbral_descalado) and cant_serv > 1:
             cant_serv -= 1
             log.info(f"De-escalando a {cant_serv} servidores")
 
@@ -158,7 +170,7 @@ def post_process_analisis_de_sensibilidad(
     "-e",
     "--escalado",
     type=Decimal,
-    default=Decimal(0.5),
+    default=Decimal(0.05),  # Valor en minutos.
     show_default=True,
     help="Espera en cola maximo para escalar.",
 )
@@ -175,7 +187,7 @@ def post_process_analisis_de_sensibilidad(
 )
 @click.option(
     "-cs",
-    "--cant-serv",
+    "--cant-serv-base",
     type=int,
     default=2,
     show_default=True,
@@ -189,7 +201,7 @@ def post_process_analisis_de_sensibilidad(
     callback=post_process_analisis_de_sensibilidad,
     help="Valores de umbral de escalado y de-escalado para analisis"
     " de sensibilidad separados por comas entre ellos y por pipes"
-    " entre distintos analisis. Ejemplo: 0.1,0.2|0.5,1",
+    " entre distintos analisis. Ejemplo: 0.1,0.2,4|0.5,1,6",
 )
 @click.option(
     "-mt",
@@ -202,26 +214,28 @@ def run_model(
     tiempo_final: Optional[int] = 43200,
     escalado: Optional[Decimal] = 0.05,
     descalado: Optional[int] = 20,
-    cant_serv: Optional[int] = 5,
+    cant_serv_base: Optional[int] = 5,
     analisis_sensibilidad: Optional[List[str]] = None,
     max_threads: Optional[int] = 3,
 ):
-    delta_t: int = 10  # minutos
+    delta_t: int = 1  # minutos
     costo_por_min_serv: int = 20  # Averiguar el costo x minuto real.
     costo_por_iniciar_serv: int = 2000  # Costo de iniciar un servidor
-    analisis_sensibilidad = analisis_sensibilidad or [(escalado, descalado)]
+    analisis_sensibilidad = analisis_sensibilidad or [
+        (escalado, descalado, cant_serv_base)
+    ]
 
     start = time()
-    results = {}
+    results: List[dict] = []
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures: List[Future] = []
-        for escalado, descalado in analisis_sensibilidad:
+        for (escalado, descalado, cant_serv) in analisis_sensibilidad:
             futures.append(
                 executor.submit(
                     run_model_from,
                     tiempo_final,
                     delta_t,
-                    cant_serv,
+                    int(cant_serv),
                     costo_por_iniciar_serv,
                     costo_por_min_serv,
                     escalado,
@@ -230,15 +244,30 @@ def run_model(
             )
         for future in futures:
             (escalado, descalado, pec1, pto1, ct) = future.result()
-            results[
-                (escalado, descalado)
-            ] = f"Promedio de espera en cola mas alto: {pec1}, Porcentaje de tiempo ocioso mas alto: {pto1}, Costo Total: {ct}"
+
+            results.append(
+                {
+                    "escalado": escalado,
+                    "descalado": descalado,
+                    "cant_serv_final": cant_serv,
+                    "pec1": pec1,
+                    "pto1": pto1,
+                    "costo_total": ct,
+                }
+            )
 
     end = time()
-    for (escalado, descalado), result_str in results.items():
+    for vars in results:
         print(
-            f"Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n{result_str}\n"
+            (
+                "Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n"
+                "Cantidad final de servidores: {cant_serv_final},Promedio de espera en cola mas alto: {pec1}, "
+                "Porcentaje de tiempo ocioso mas alto: {pto1}, Costo Total: {costo_total}"
+            ).format(**vars)
         )
+
+    with open("./results/latest-run.json", "w") as f:
+        json.dump(results, f)
 
     print(f"Tiempo total de ejecucion: {end - start}")
 

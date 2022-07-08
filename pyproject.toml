@@ -8,6 +8,7 @@ authors = ["ramiro-luengo <ramirobmds@gmail.com>"]
 python = "^3.10"
 click = "^8.1.3"
 black = "^22.6.0"
+simplejson = "^3.17.6"
 
 [tool.poetry.dev-dependencies]
 
