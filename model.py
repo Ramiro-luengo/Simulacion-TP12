@@ -1,5 +1,6 @@
 import random
 import simplejson as json
+import matplotlib.pyplot as plt
 from time import time
 from copy import deepcopy
 from decimal import Decimal
@@ -111,6 +112,7 @@ def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
 
 
 def run_model_from(
+    thread_idx: int,
     tiempo_final: int,
     delta_t: int,
     cant_serv: int,
@@ -199,9 +201,9 @@ def post_process_analisis_de_sensibilidad(
     type=str,
     show_default=True,
     callback=post_process_analisis_de_sensibilidad,
-    help="Valores de umbral de escalado y de-escalado para analisis"
-    " de sensibilidad separados por comas entre ellos y por pipes"
-    " entre distintos analisis. Ejemplo: 0.1,0.2,4|0.5,1,6",
+    help="Valores de umbral de escalado, de-escalado y cantidad de servidores"
+    " para analisis de sensibilidad separados por comas entre ellos"
+    " y por pipes entre distintos analisis. Ejemplo: 0.1,0.2,4|0.5,1,6",
 )
 @click.option(
     "-mt",
@@ -229,10 +231,11 @@ def run_model(
     results: List[dict] = []
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures: List[Future] = []
-        for (escalado, descalado, cant_serv) in analisis_sensibilidad:
+        for idx, (escalado, descalado, cant_serv) in enumerate(analisis_sensibilidad):
             futures.append(
                 executor.submit(
                     run_model_from,
+                    idx,
                     tiempo_final,
                     delta_t,
                     int(cant_serv),
@@ -267,7 +270,7 @@ def run_model(
         )
 
     with open("./results/latest-run.json", "w") as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=2)
 
     print(f"Tiempo total de ejecucion: {end - start}")
 
