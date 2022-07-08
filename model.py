@@ -1,19 +1,21 @@
 import random
-import simplejson as json
-import matplotlib.pyplot as plt
 from time import time
 from copy import deepcopy
+from pathlib import Path
 from decimal import Decimal
 from typing import List, Optional, Tuple
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import click
+import simplejson as json
+import matplotlib.pyplot as plt
 
 from logging_config import get_logger
 
 log = get_logger(__name__)
 
 HV = Decimal(9999999)
+PLOTS_DIR = "plots"
 
 
 def intervalo_entre_arribos(real_time: int) -> Decimal:
@@ -99,6 +101,8 @@ def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
                 ito[menor_idx] = deepcopy(_time)
 
     pec = (sps - sta) / cll
+    if pec < 0:
+        pec = 0
 
     # for idx in range(len(sto)):
     #     # Si TPS == HV significa que nunca ejecuto nada.
@@ -128,13 +132,15 @@ def run_model_from(
     fpe = 0  # Fecha de proximo escalado
     costo_inicio = 0
 
+    STATE = []
+
     while _time < tiempo_final:
         _time = _time + delta_t
 
         if _time == fpe:
             cant_serv += 1
             costo_inicio = costo_por_iniciar_serv
-            log.info(f"Escalando a {cant_serv} servidores")
+            log.info(f"Thread - {thread_idx}: Escalando a {cant_serv} servidores")
         else:
             costo_inicio = 0
 
@@ -149,9 +155,15 @@ def run_model_from(
             fpe = _time + generar_demora()
         elif requiere_descalado(pto, umbral_descalado) and cant_serv > 1:
             cant_serv -= 1
-            log.info(f"De-escalando a {cant_serv} servidores")
+            log.info(f"Thread - {thread_idx}: De-escalando a {cant_serv} servidores")
 
         ct += (cant_serv * costo_por_min_serv * delta_t) + costo_inicio
+        STATE.append(f"{_time},{pec},{pto},{ct},{cant_serv}")
+
+    temp_path = Path(__file__).parent / PLOTS_DIR
+    temp_path.mkdir(parents=True, exist_ok=True)
+    with open(temp_path / f"plot_{thread_idx}.txt", "w") as f:
+        f.write("|".join(STATE))
 
     return umbral_escalado, umbral_descalado, pec1, pto1, ct
 
@@ -167,7 +179,12 @@ def post_process_analisis_de_sensibilidad(
     return ret_value
 
 
-@click.command()
+@click.group(chain=True)
+def model():
+    pass
+
+
+@model.command()
 @click.option(
     "-e",
     "--escalado",
@@ -275,5 +292,41 @@ def run_model(
     print(f"Tiempo total de ejecucion: {end - start}")
 
 
+@model.command()
+@click.option("-f", "--file-number", type=int, default=0)
+def plot_results(file_number: Optional[int] = 0):
+    names = {
+        "PEC": (0, 0),
+        "PTO": (0, 1),
+        "Costo Total": (1, 0),
+        "Cantidad de servidores": (1, 1),
+    }
+    x = [[], [], [], []]
+    y = [[], [], [], []]
+
+    _, axs = plt.subplots(2, 2)
+    with open(f"./{PLOTS_DIR}/plot_{file_number}.txt", "r") as f:
+        lines = f.read()
+        lines = [l for l in lines.split("|")]
+
+    for line in lines:
+        _time = line.split(",")[0]
+        for value in x:
+            value.append(int(_time))
+        for idx, val in enumerate(line.split(",")[1:]):
+            y[idx].append(float(val))
+
+    for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
+        axs[axis_x, axis_y].set_title(name)
+
+    for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
+        x_vals = x[idx]
+        y_vals = y[idx]
+
+        axs[axis_x, axis_y].plot(x_vals, y_vals)
+
+    plt.show()
+
+
 if __name__ == "__main__":
-    run_model()
+    model()
