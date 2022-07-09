@@ -16,6 +16,7 @@ log = get_logger(__name__)
 
 HV = Decimal(9999999)
 PLOTS_DIR = "plots"
+PLOTS_PATH = Path(__file__).parent / PLOTS_DIR
 
 
 def intervalo_entre_arribos(real_time: int) -> Decimal:
@@ -23,7 +24,7 @@ def intervalo_entre_arribos(real_time: int) -> Decimal:
         # 0hs y las 6hs: Entre 0.6 y 1.2 segundos.
         return Decimal(random.uniform(0.01, 0.02))
     else:
-        # Entre 0.05 y 0.1 segundos.
+        # Resto del dia: Entre 0.05 y 0.1 segundos.
         return Decimal(random.uniform(0.0008, 0.0016))
 
 
@@ -132,6 +133,8 @@ def run_model_from(
     fpe = 0  # Fecha de proximo escalado
     costo_inicio = 0
 
+    # Guarda el estado de la simulacion para graficarlo
+    # con el comando plot-results.
     STATE = []
 
     while _time < tiempo_final:
@@ -160,12 +163,11 @@ def run_model_from(
         ct += (cant_serv * costo_por_min_serv * delta_t) + costo_inicio
         STATE.append(f"{_time},{pec},{pto},{ct},{cant_serv}")
 
-    temp_path = Path(__file__).parent / PLOTS_DIR
-    temp_path.mkdir(parents=True, exist_ok=True)
-    with open(temp_path / f"plot_{thread_idx}.txt", "w") as f:
+    PLOTS_PATH.mkdir(parents=True, exist_ok=True)
+    with open(PLOTS_PATH / f"plot_{thread_idx}.txt", "w") as f:
         f.write("|".join(STATE))
 
-    return umbral_escalado, umbral_descalado, pec1, pto1, ct
+    return umbral_escalado, umbral_descalado, pec1, pto1, ct, cant_serv
 
 
 def post_process_analisis_de_sensibilidad(
@@ -182,6 +184,28 @@ def post_process_analisis_de_sensibilidad(
 @click.group(chain=True)
 def model():
     pass
+
+
+def print_results(results: List[dict]) -> None:
+    """Prints and saves results.
+
+    Args:
+        results: List of smiulation results.
+    """
+
+    print("-" * 20)
+    for vars in results:
+        print(
+            (
+                "Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n"
+                "Cantidad final de servidores: {cant_serv_final},Promedio de espera en cola mas alto: {pec1}, "
+                "Porcentaje de tiempo ocioso mas alto: {pto1}, Costo Total: {costo_total}"
+            ).format(**vars)
+        )
+        print("-" * 20)
+
+    with open("./results/latest-run.json", "w") as f:
+        json.dump(results, f, indent=2)
 
 
 @model.command()
@@ -258,12 +282,12 @@ def run_model(
                     int(cant_serv),
                     costo_por_iniciar_serv,
                     costo_por_min_serv,
-                    escalado,
-                    descalado,
+                    float(escalado),
+                    int(descalado),
                 )
             )
         for future in futures:
-            (escalado, descalado, pec1, pto1, ct) = future.result()
+            (escalado, descalado, pec1, pto1, ct, cant_serv) = future.result()
 
             results.append(
                 {
@@ -277,53 +301,52 @@ def run_model(
             )
 
     end = time()
-    for vars in results:
-        print(
-            (
-                "Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n"
-                "Cantidad final de servidores: {cant_serv_final},Promedio de espera en cola mas alto: {pec1}, "
-                "Porcentaje de tiempo ocioso mas alto: {pto1}, Costo Total: {costo_total}"
-            ).format(**vars)
-        )
 
-    with open("./results/latest-run.json", "w") as f:
-        json.dump(results, f, indent=2)
+    print_results(results)
 
     print(f"Tiempo total de ejecucion: {end - start}")
 
 
 @model.command()
-@click.option("-f", "--file-number", type=int, default=0)
-def plot_results(file_number: Optional[int] = 0):
-    names = {
-        "PEC": (0, 0),
-        "PTO": (0, 1),
-        "Costo Total": (1, 0),
-        "Cantidad de servidores": (1, 1),
-    }
-    x = [[], [], [], []]
-    y = [[], [], [], []]
+@click.option(
+    "-f",
+    "--file-numbers",
+    type=str,
+    default="1",
+    help="Numeros de archivo para graficar separados por coma. Ejemplos: 1 o 0,1",
+    show_default=True,
+)
+def plot_results(file_numbers: Optional[str] = "1"):
+    for file_number in map(int, file_numbers.split(",")):
+        names = {
+            "PEC": (0, 0),
+            "PTO": (0, 1),
+            "Costo Total": (1, 0),
+            "Cantidad de servidores": (1, 1),
+        }
+        x = [[], [], [], []]
+        y = [[], [], [], []]
 
-    _, axs = plt.subplots(2, 2)
-    with open(f"./{PLOTS_DIR}/plot_{file_number}.txt", "r") as f:
-        lines = f.read()
-        lines = [l for l in lines.split("|")]
+        _, axs = plt.subplots(2, 2)
+        with open(PLOTS_PATH / f"plot_{file_number}.txt", "r") as f:
+            lines = f.read()
+            lines = [l for l in lines.split("|")]
 
-    for line in lines:
-        _time = line.split(",")[0]
-        for value in x:
-            value.append(int(_time))
-        for idx, val in enumerate(line.split(",")[1:]):
-            y[idx].append(float(val))
+        for line in lines:
+            _time = line.split(",")[0]
+            for value in x:
+                value.append(int(_time))
+            for idx, val in enumerate(line.split(",")[1:]):
+                y[idx].append(float(val))
 
-    for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
-        axs[axis_x, axis_y].set_title(name)
+        for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
+            axs[axis_x, axis_y].set_title(name)
 
-    for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
-        x_vals = x[idx]
-        y_vals = y[idx]
+        for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
+            x_vals = x[idx]
+            y_vals = y[idx]
 
-        axs[axis_x, axis_y].plot(x_vals, y_vals)
+            axs[axis_x, axis_y].plot(x_vals, y_vals)
 
     plt.show()
 
