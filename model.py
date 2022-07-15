@@ -24,13 +24,13 @@ def intervalo_entre_arribos(real_time: int) -> Decimal:
         # 0hs y las 6hs: Entre 0.6 y 1.2 segundos.
         return Decimal(random.uniform(0.01, 0.02))
     else:
-        # Resto del dia: Entre 0.05 y 0.1 segundos.
-        return Decimal(random.uniform(0.0008, 0.0016))
+        # Resto del dia: Entre 0.3 y 0.6 segundos.
+        return Decimal(random.uniform(0.005, 0.01))
 
 
 def generar_tiempo_atencion() -> Decimal:
-    # Uniforme entre 3 y 4 segundos.
-    return Decimal(random.uniform(0.05, 0.066))
+    # Uniforme entre 1 y 2 segundos.
+    return Decimal(random.uniform(0.016, 0.032))
 
 
 def generar_demora() -> int:
@@ -56,7 +56,9 @@ def hv_en_tps(tps: List[Decimal]) -> int:
     return next(idx for idx, t_salida in enumerate(tps) if t_salida == HV)
 
 
-def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
+def atender_peticiones(
+    real_time: int, cant_serv: int, sec: Decimal, scll: int
+) -> Decimal:
     ns = 0
     sta = 0
     cll = 0
@@ -90,7 +92,7 @@ def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
                 )
         else:
             # Salida
-            sps = (tps[menor_idx] - _time) * ns
+            sps += (tps[menor_idx] - _time) * ns
             _time = deepcopy(tps[menor_idx])
             ns -= 1
             if ns >= cant_serv:
@@ -102,18 +104,18 @@ def atender_peticiones(real_time: int, cant_serv: int) -> Decimal:
                 ito[menor_idx] = deepcopy(_time)
 
     pec = (sps - sta) / cll
-    if pec < 0:
-        pec = 0
 
-    # for idx in range(len(sto)):
-    #     # Si TPS == HV significa que nunca ejecuto nada.
-    #     if ito[idx] == 0 and tps[idx] == HV:
-    #         sto[idx] = tf
+    for idx in range(len(sto)):
+        if tps[idx] == HV:
+            sto[idx] += tf - ito[idx]
 
     sto_max = max(sto)
     pto_max = (sto_max * 100) / tf
 
-    return Decimal(pec), Decimal(pto_max)
+    sec += sps - sta
+    scll += cll
+
+    return Decimal(pec), Decimal(pto_max), sec, scll
 
 
 def run_model_from(
@@ -122,16 +124,16 @@ def run_model_from(
     delta_t: int,
     cant_serv: int,
     costo_por_iniciar_serv: int,
-    costo_por_min_serv: int,
+    costo_por_min_serv: Decimal,
     umbral_escalado: int,
     umbral_descalado: int,
-) -> Tuple[int, Decimal, Decimal, Decimal]:
+) -> Tuple[int, Decimal, Decimal, Decimal, Decimal, int]:
     _time = 0
-    pec1 = 0  # Promedio de espera en cola mas alto
-    pto1 = 0  # Porcentaje de tiempo ocioso mas alto
     ct = Decimal(0)
     fpe = 0  # Fecha de proximo escalado
     costo_inicio = 0
+    sec = 0
+    scll = 0
 
     # Guarda el estado de la simulacion para graficarlo
     # con el comando plot-results.
@@ -147,16 +149,12 @@ def run_model_from(
         else:
             costo_inicio = 0
 
-        pec, pto = atender_peticiones(_time, cant_serv)
-        if pec > pec1:
-            pec1 = pec
-
-        if pto > pto1:
-            pto1 = pto
+        pec, pto, sec, scll = atender_peticiones(_time, cant_serv, sec, scll)
 
         if fpe < _time and requiere_escalado(pec, umbral_escalado):
             fpe = _time + generar_demora()
-        elif requiere_descalado(pto, umbral_descalado) and cant_serv > 1:
+
+        if requiere_descalado(pto, umbral_descalado) and cant_serv > 1:
             cant_serv -= 1
             log.info(f"Thread - {thread_idx}: De-escalando a {cant_serv} servidores")
 
@@ -167,7 +165,7 @@ def run_model_from(
     with open(PLOTS_PATH / f"plot_{thread_idx}.txt", "w") as f:
         f.write("|".join(STATE))
 
-    return umbral_escalado, umbral_descalado, pec1, pto1, ct, cant_serv
+    return umbral_escalado, umbral_descalado, (sec / scll), ct, cant_serv
 
 
 def post_process_analisis_de_sensibilidad(
@@ -198,8 +196,8 @@ def print_results(results: List[dict]) -> None:
         print(
             (
                 "Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n"
-                "Cantidad final de servidores: {cant_serv_final},Promedio de espera en cola mas alto: {pec1}, "
-                "Porcentaje de tiempo ocioso mas alto: {pto1}, Costo Total: {costo_total}"
+                "Cantidad final de servidores: {cant_serv_final}, Promedio de espera en cola mas alto: {ppec}, "
+                "Costo Total: {costo_total}"
             ).format(**vars)
         )
         print("-" * 20)
@@ -213,7 +211,7 @@ def print_results(results: List[dict]) -> None:
     "-e",
     "--escalado",
     type=Decimal,
-    default=Decimal(0.05),  # Valor en minutos.
+    default=Decimal(0.03),  # Valor en minutos.
     show_default=True,
     help="Espera en cola maximo para escalar.",
 )
@@ -226,7 +224,7 @@ def print_results(results: List[dict]) -> None:
     help="Porcentaje de tiempo ocioso para de-escalar.",
 )
 @click.option(
-    "-tf", "--tiempo-final", type=int, default=43200, show_default=True  # 1 mes
+    "-tf", "--tiempo-final", type=int, default=5000, show_default=True  # 3.47 dias
 )
 @click.option(
     "-cs",
@@ -262,8 +260,10 @@ def run_model(
     max_threads: Optional[int] = 3,
 ):
     delta_t: int = 1  # minutos
-    costo_por_min_serv: int = 20  # Averiguar el costo x minuto real.
-    costo_por_iniciar_serv: int = 2000  # Costo de iniciar un servidor
+    # costo_por_min_serv: Decimal = Decimal(0.00128)  # Averiguar el costo x minuto real.
+    costo_por_min_serv: Decimal = Decimal(0.128)  # Averiguar el costo x minuto real.
+    # costo_por_iniciar_serv: int = 10  # Costo de iniciar un servidor
+    costo_por_iniciar_serv: int = 1  # Costo de iniciar un servidor
     analisis_sensibilidad = analisis_sensibilidad or [
         (escalado, descalado, cant_serv_base)
     ]
@@ -287,15 +287,14 @@ def run_model(
                 )
             )
         for future in futures:
-            (escalado, descalado, pec1, pto1, ct, cant_serv) = future.result()
+            (escalado, descalado, pect, ct, cant_serv) = future.result()
 
             results.append(
                 {
                     "escalado": escalado,
                     "descalado": descalado,
                     "cant_serv_final": cant_serv,
-                    "pec1": pec1,
-                    "pto1": pto1,
+                    "pect": pect,
                     "costo_total": ct,
                 }
             )
@@ -312,7 +311,7 @@ def run_model(
     "-f",
     "--file-numbers",
     type=str,
-    default="1",
+    default="0",
     help="Numeros de archivo para graficar separados por coma. Ejemplos: 1 o 0,1",
     show_default=True,
 )
@@ -320,7 +319,7 @@ def plot_results(file_numbers: Optional[str] = "1"):
     for file_number in map(int, file_numbers.split(",")):
         names = {
             "PEC": (0, 0),
-            "PTO": (0, 1),
+            "MAX PTO": (0, 1),
             "Costo Total": (1, 0),
             "Cantidad de servidores": (1, 1),
         }
