@@ -1,4 +1,5 @@
 import random
+import numpy
 from time import time
 from copy import deepcopy
 from pathlib import Path
@@ -34,8 +35,11 @@ def generar_tiempo_atencion() -> Decimal:
 
 
 def generar_demora() -> int:
-    # Uniforme entre 10 y 30 minutos.
-    return int(random.uniform(10, 30))
+    # Entre 10 y 30 minutos con el doble de probabilidad
+    # de que sea 10 que 30.
+    r = random.uniform(0, 1)
+
+    return int(50 - numpy.sqrt(4 - 3 * r))
 
 
 def requiere_escalado(pec: Decimal, umbral_escalado: int) -> bool:
@@ -196,7 +200,7 @@ def print_results(results: List[dict]) -> None:
         print(
             (
                 "Umbral de escalado: {escalado}\nUmbral de de-escalado: {descalado}%\n"
-                "Cantidad final de servidores: {cant_serv_final}, Promedio de espera en cola mas alto: {ppec}, "
+                "Cantidad final de servidores: {cant_serv_final}, Promedio de espera en cola general: {pect}, "
                 "Costo Total: {costo_total}"
             ).format(**vars)
         )
