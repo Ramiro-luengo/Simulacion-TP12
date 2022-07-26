@@ -25,8 +25,8 @@ def intervalo_entre_arribos(real_time: int) -> Decimal:
         # 0hs y las 6hs: Entre 0.6 y 1.2 segundos.
         return Decimal(random.uniform(0.01, 0.02))
     else:
-        # Resto del dia: Entre 0.3 y 0.6 segundos.
-        return Decimal(random.uniform(0.005, 0.01))
+        # Resto del dia: Entre 0.054 y 0.6 segundos.
+        return Decimal(random.uniform(0.0009, 0.01))
 
 
 def generar_tiempo_atencion() -> Decimal:
@@ -228,7 +228,7 @@ def print_results(results: List[dict]) -> None:
     help="Porcentaje de tiempo ocioso para de-escalar.",
 )
 @click.option(
-    "-tf", "--tiempo-final", type=int, default=5000, show_default=True  # 3.47 dias
+    "-tf", "--tiempo-final", type=int, default=1439, show_default=True  # 3.47 dias
 )
 @click.option(
     "-cs",
@@ -245,7 +245,7 @@ def print_results(results: List[dict]) -> None:
     show_default=True,
     callback=post_process_analisis_de_sensibilidad,
     help="Valores de umbral de escalado, de-escalado y cantidad de servidores"
-    " para analisis de sensibilidad separados por comas entre ellos"
+    " inicial para analisis de sensibilidad separados por comas entre ellos"
     " y por pipes entre distintos analisis. Ejemplo: 0.1,0.2,4|0.5,1,6",
 )
 @click.option(
@@ -256,7 +256,7 @@ def print_results(results: List[dict]) -> None:
     show_default=True,
 )
 def run_model(
-    tiempo_final: Optional[int] = 43200,
+    tiempo_final: Optional[int] = 1439,
     escalado: Optional[Decimal] = 0.05,
     descalado: Optional[int] = 20,
     cant_serv_base: Optional[int] = 5,
