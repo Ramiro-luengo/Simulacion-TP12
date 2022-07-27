@@ -25,21 +25,24 @@ $ python -m poetry install
 ```bash
 $ python model.py run-model --help
 
+Usage: model.py run-model [OPTIONS]
+
+Options:
   -e, --escalado DECIMAL          Espera en cola maximo para escalar.
-                                  [default: 0.05000000000000000277555756156289
-                                  135105907917022705078125]
+                                  [default: 0.03]
   -d, --descalado INTEGER         Porcentaje de tiempo ocioso para de-escalar.
                                   [default: 20]
-  -tf, --tiempo-final INTEGER     [default: 43200]
-  -cs, --cant-serv-base INTEGER   Cantidad de servidores inicial.  [default:2]
+  -tf, --tiempo-final INTEGER     [default: 1439]
+  -cs, --cant-serv-base INTEGER   Cantidad de servidores inicial.  [default:
+                                  2]
   -as, --analisis-sensibilidad TEXT
                                   Valores de umbral de escalado, de-escalado y
-                                  cantidad de servidores para analisis de
-                                  sensibilidad separados por comas entre ellos
-                                  y por pipes entre distintos analisis.
+                                  cantidad de servidores inicial para analisis
+                                  de sensibilidad separados por comas entre
+                                  ellos y por pipes entre distintos analisis.
                                   Ejemplo: 0.1,0.2,4|0.5,1,6
   -mt, --max-threads INTEGER      [default: 3]
-  --help
+  --help                          Show this message and exit.
 ``` 
 
 6. Graficar resultados:
