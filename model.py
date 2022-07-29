@@ -1,5 +1,5 @@
 import random
-import numpy
+import numpy as np
 from time import time
 from copy import deepcopy
 from pathlib import Path
@@ -39,7 +39,7 @@ def generar_demora() -> int:
     # de que sea 10 que 30.
     r = random.uniform(0, 1)
 
-    return int(50 - numpy.sqrt(4 - 3 * r))
+    return int(50 - np.sqrt(4 - 3 * r))
 
 
 def requiere_escalado(pec: Decimal, umbral_escalado: int) -> bool:
@@ -343,13 +343,12 @@ def plot_results(file_numbers: Optional[str] = "1"):
                 y[idx].append(float(val))
 
         for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
-            axs[axis_x, axis_y].set_title(name)
+            __axs = axs[axis_x, axis_y]
+            __axs.set_title(name)
 
-        for idx, (name, (axis_x, axis_y)) in enumerate(names.items()):
-            x_vals = x[idx]
-            y_vals = y[idx]
+            __axs.grid("on")
 
-            axs[axis_x, axis_y].plot(x_vals, y_vals)
+            __axs.plot(x[idx], y[idx])
 
     plt.show()
 
